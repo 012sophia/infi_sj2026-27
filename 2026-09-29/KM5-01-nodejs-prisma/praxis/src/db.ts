@@ -1,0 +1,11 @@
+// src/db.ts — EIN PrismaClient für das ganze Projekt.
+// Prisma 7 braucht zwingend einen Driver Adapter (die Rust-Query-Engine gibt es
+// nicht mehr). Ohne { adapter } startet der Client nicht.
+import "dotenv/config";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaClient } from "../generated/prisma/client.ts";
+
+const url = process.env.DATABASE_URL ?? "file:./dev.db";
+const adapter = new PrismaBetterSqlite3({ url });
+
+export const prisma = new PrismaClient({ adapter });

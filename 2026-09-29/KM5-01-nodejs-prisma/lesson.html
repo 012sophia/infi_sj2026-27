@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KM5-01 – Node.js + Prisma 7 (SQLite)</title>
+<link rel="stylesheet" href="../../assets/lesson.css">
+<script src="../../assets/quiz.js" defer></script>
+</head>
+<body>
+<main>
+<nav class="breadcrumb">Prepared Lesson KM5-01 · UE „Rep &amp; ORM-Einstieg"</nav>
+<h1>Node.js + Prisma 7 — der ORM-Weg</h1>
+<p class="subtitle">Nach der Reparaturstunde vom 22.09.: Wir holen das ORM zurück — diesmal mit Node.js als Runtime für die Datenbank-Werkzeugkette und Prisma 7 mit SQLite.</p>
+
+<div class="callout">
+<strong>Entscheidung (2026-09-29):</strong> Wir bleiben vorerst bei <strong>Prisma</strong> und wechseln für
+die DB-Werkzeugkette auf <strong>Node.js</strong>. Grund: Prisma 7 braucht zwingend einen nativen
+<em>Driver Adapter</em>. Unter Node ist das der Normalfall (<code>better-sqlite3</code>) — unter Deno war
+genau das die Reibung vom 22.09. Der allgemeine Unterrichts-Code bleibt Deno/TypeScript.
+</div>
+
+<h2>1. Ziel dieser Lesson</h2>
+<p>Am Ende hast du ein <strong>lauffähiges</strong> Prisma-7-Projekt: Node initialisiert, Prisma gepinnt,
+Schema geschrieben, migriert, geseedet — und dieselben fünf Diagnose-Queries aus UE 1 einmal
+<strong>über die Prisma-API</strong> gestellt. Du verstehst, was ein ORM dir abnimmt und wo es dich
+ausbremst.</p>
+
+<h2>2. Warum überhaupt Node?</h2>
+<p>Prisma 7 hat die frühere <strong>Rust-Query-Engine</strong> entfernt. Der Client redet nicht mehr
+selbst mit der Datenbank, sondern über einen <strong>Driver Adapter</strong> — für SQLite ist das
+<code>better-sqlite3</code>, ein <em>natives</em> Node-Modul. Unter Node läuft das ohne Sonderbehandlung;
+unter Deno musste man mit <code>npm:</code>-Specifiern und Berechtigungen hantieren.</p>
+<p>Merksatz: <strong>Node ist hier Transportmittel für Prisma</strong>, nicht die neue Unterrichts-Runtime.</p>
+
+<h2>3. Projekt aufsetzen</h2>
+<p>Ein leeres Verzeichnis, dann Node initialisieren. Wir schreiben ESM (<code>"type": "module"</code>):</p>
+<pre><code>npm init -y
+npm pkg set type=module
+
+# Prisma 7 — BITTE pinnen!
+npm i prisma@7 @prisma/client@7 @prisma/adapter-better-sqlite3@7 dotenv
+npm i -D tsx                     # führt TypeScript direkt aus (ESM)
+
+# Node ≥ 22.6 blockt Install-Scripts standardmäßig:
+npm approve-scripts --all</code></pre>
+<p>Das <code>@7</code> ist kein Schönheitsfehler: <code>npm i prisma</code> ohne Version zieht derzeit die
+<strong>8.0.0-RC</strong> — genau das Chaos vom 22.09.</p>
+
+<h2>4. Das Schema</h2>
+<p>Prisma beschreibt die Datenbank in einer eigenen Sprache. Datei: <code>prisma/schema.prisma</code>.</p>
+<pre><code>generator client {
+  provider = "prisma-client"      // TypeScript-Client (ESM)
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Label {
+  id        Int         @id @default(autoincrement())
+  name      String      @unique
+  kuenstler Kuenstler[]
+}
+
+model Kuenstler {
+  id      Int    @id @default(autoincrement())
+  name    String
+  labelId Int?                       // NULL erlaubt -> "ohne Label"
+  label   Label? @relation(fields: [labelId], references: [id])
+  songs   Song[]
+}
+
+model Song {
+  id          Int       @id @default(autoincrement())
+  titel       String
+  dauerSek    Int
+  kuenstlerId Int
+  kuenstler   Kuenstler @relation(fields: [kuenstlerId], references: [id])
+}</code></pre>
+<p>Anders als beim SQL-Handwerk stehen hier <strong>Beziehungen</strong> als Felder (<code>songs</code>,
+<code>label</code>) — daraus baut Prisma die Fremdschlüssel.</p>
+
+<h2>5. Verbindung &amp; Migration</h2>
+<p>Die Verbindungs-URL steht in <code>.env</code> (nicht im Schema):</p>
+<pre><code># .env
+DATABASE_URL="file:./dev.db"</code></pre>
+<p>Die Prisma-CLI liest sie über <code>prisma7.config.ts</code> und legt beim Migrieren die
+<strong>SQL-Migration</strong> plus den Client an:</p>
+<pre><code>npx prisma migrate dev --name init
+npx prisma generate      # passiert bei migrate dev automatisch</code></pre>
+<p>Ergebnis: <code>prisma/migrations/…_init/migration.sql</code> — echtes SQL, das du lesen kannst.</p>
+
+<h2>6. Den Client verbinden (Driver Adapter!)</h2>
+<p>Der wichtigste neue Baustein. Ohne Adapter startet der Client nicht:</p>
+<pre><code>// src/db.ts
+import "dotenv/config";
+import { PrismaClient } from "../generated/prisma/client.ts";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+
+const adapter = new PrismaBetterSqlite3({
+  url: process.env.DATABASE_URL ?? "file:./dev.db",
+});
+export const prisma = new PrismaClient({ adapter });</code></pre>
+
+<h2>7. Dieselben Fragen — jetzt über Prisma</h2>
+<table>
+<tr><th>Frage</th><th>SQL-Handwerk</th><th>Prisma-API</th></tr>
+<tr><td>Top-Künstler</td><td><code>JOIN + GROUP BY + LIMIT</code></td><td><code>song.groupBy({ by, _count, orderBy, take })</code></td></tr>
+<tr><td>Labels mit &gt;1 Künstler</td><td><code>GROUP BY + HAVING</code></td><td><code>label.findMany({ include: { _count } })</code> + Filter</td></tr>
+<tr><td><code>COUNT(*)</code> vs. <code>COUNT(col)</code></td><td><code>COUNT(*)</code> / <code>COUNT(labelId)</code></td><td><code>count()</code> / <code>count({ where: { labelId: { not: null } } })</code></td></tr>
+<tr><td>WHERE + HAVING</td><td><code>WHERE dauerSek &gt; 200 … HAVING COUNT(*) ≥ 2</code></td><td><code>groupBy({ where, having: { kuenstlerId: { _count: { gte: 2 } } } })</code></td></tr>
+<tr><td>Künstlerpaare (Self-JOIN)</td><td><code>JOIN … x.id &lt; y.id</code></td><td><strong>nicht</strong> direkt —&gt; <code>prisma.$queryRaw</code></td></tr>
+</table>
+<p>Die fünfte Zeile ist die Lehrstunde: <strong>Prisma hat keinen Self-JOIN.</strong> Für solche Fälle
+gibt es den Fluchtweg <code>$queryRaw</code> — rohes SQL, typisiert zurückgegeben.</p>
+
+<pre><code>// Die Zähl-Variante aus Frage 4 — kurz und klar:
+const alle     = await prisma.kuenstler.count();
+const mitLabel = await prisma.kuenstler.count({ where: { labelId: { not: null } } });</code></pre>
+
+<h2>8. Typische Fehler</h2>
+<ul>
+<li><strong>Ungepinntes Prisma:</strong> <code>npm i prisma</code> → 8.0.0-RC. Immer <code>@7</code>.</li>
+<li><strong>Falscher Generator:</strong> <code>prisma-client-js</code> erzeugt CommonJS und bricht unter ESM beim Named-Import — nimm <code>prisma-client</code> (TypeScript).</li>
+<li><strong>Adapter vergessen:</strong> <code>new PrismaClient()</code> ohne <code>{ adapter }</code> bricht unter Prisma 7 ab.</li>
+<li><strong>Kein <code>.env</code>:</strong> Ohne <code>DATABASE_URL</code> findet die CLI die DB nicht.</li>
+<li><strong>Install-Scripts geblockt:</strong> <code>better-sqlite3</code> bleibt ohne <code>approve-scripts</code> ungebaut.</li>
+<li><strong><code>having</code> über <code>_count._all</code>:</strong> Prisma filtert über ein <em>Feld</em>: <code>having: { kuenstlerId: { _count: { gte: 2 } } }</code>.</li>
+</ul>
+
+<h2>9. Quiz</h2>
+
+<div class="quiz" data-loesung="1">
+<p class="frage">1. Warum läuft Prisma 7 unter Node reibungsloser als unter Deno?</p>
+<label><input type="radio" name="q1" value="0" data-grund="Falsch, weil Node nicht verboten ist — der Lesson-Text nennt Node gerade das reibungslose Transportmittel für Prisma."> Weil Node von Prisma offiziell verboten wurde</label>
+<label><input type="radio" name="q1" value="1" data-grund="Richtig, weil Prisma 7 zwingend einen nativen Driver Adapter voraussetzt, der unter Node (better-sqlite3) ohne Sonderbehandlung läuft."> Weil Prisma 7 native Driver-Adapter voraussetzt</label>
+<label><input type="radio" name="q1" value="2" data-grund="Falsch, weil Deno nicht daran scheitert, SQLite zu öffnen — die Reibung waren npm:-Specifier und Berechtigungen."> Weil Deno keine SQLite-Dateien öffnen darf</label>
+<label><input type="radio" name="q1" value="3" data-grund="Falsch, weil Prisma 7 die frühere Rust-Query-Engine gerade entfernt hat; Node bringt sie nicht zurück."> Weil Node die Rust-Engine wieder mitbringt</label>
+<p class="feedback" aria-live="polite"></p>
+</div>
+
+<div class="quiz" data-loesung="2">
+<p class="frage">2. Welcher Befehl installiert die richtige Prisma-Version?</p>
+<label><input type="radio" name="q2" value="0" data-grund="Falsch, weil ein ungepinnter Befehl derzeit die 8.0.0-RC zieht — genau das Chaos vom 22.09."> npm install prisma@latest ohne weitere Bindung</label>
+<label><input type="radio" name="q2" value="1" data-grund="Falsch, weil die Lesson Prisma 7 pinnen will, nicht Version 6."> npm install prisma@6 plus einen separaten Adapter</label>
+<label><input type="radio" name="q2" value="2" data-grund="Richtig, weil der Befehl prisma@7 mit @prisma/client@7 und dem Adapter @prisma/adapter-better-sqlite3@7 kombiniert."> npm install prisma@7 samt Adapter und Client</label>
+<label><input type="radio" name="q2" value="3" data-grund="Falsch, weil 8 die unfertige 8.0.0-RC ist und damit die falsche, nicht gepinnte Version."> npm install prisma@8 samt Adapter und Client</label>
+<p class="feedback" aria-live="polite"></p>
+</div>
+
+<div class="quiz" data-loesung="0">
+<p class="frage">3. Was bewirkt <code>npm approve-scripts --all</code>?</p>
+<label><input type="radio" name="q3" value="0" data-grund="Richtig, weil Node ≥ 22.6 Install-Scripts standardmäßig blockt; ohne Freigabe bleibt better-sqlite3 ungebaut."> Es erlaubt die nötigen Install-Scripts der Pakete</label>
+<label><input type="radio" name="q3" value="1" data-grund="Falsch, weil approve-scripts nur Install-Scripts freigibt und nichts löscht."> Es löscht alle vorhandenen node_modules wieder</label>
+<label><input type="radio" name="q3" value="2" data-grund="Falsch, weil das Pinnen über das @7 im npm-i-Befehl passiert, nicht über approve-scripts."> Es pinnt jede Abhängigkeit auf die Version sieben</label>
+<label><input type="radio" name="q3" value="3" data-grund="Falsch, weil die Migration mit npx prisma migrate dev läuft, nicht über approve-scripts."> Es startet die Migration gegen die lokale Datei</label>
+<p class="feedback" aria-live="polite"></p>
+</div>
+
+<div class="quiz" data-loesung="3">
+<p class="frage">4. Wo steht die Datenbank-URL für die Prisma-CLI?</p>
+<label><input type="radio" name="q4" value="0" data-grund="Falsch, weil die URL gerade nicht im Schema steht — die Lesson betont, dass sie in die .env gehört."> Fest im datasource-Block des Schemas</label>
+<label><input type="radio" name="q4" value="1" data-grund="Falsch, weil der generator-Block nur den Client-Provider beschreibt, nicht die Verbindungs-URL."> Fest im generator-Block des Schemas</label>
+<label><input type="radio" name="q4" value="2" data-grund="Falsch, weil package.json nicht die Verbindungs-URL enthält; die steht in der .env."> In der Datei package.json unter scripts</label>
+<label><input type="radio" name="q4" value="3" data-grund="Richtig, weil DATABASE_URL=&quot;file:./dev.db&quot; in der .env steht und die CLI sie über prisma7.config.ts liest."> In der Datei .env über DATABASE_URL</label>
+<p class="feedback" aria-live="polite"></p>
+</div>
+
+<div class="quiz" data-loesung="1">
+<p class="frage">5. Was erzeugt <code>npx prisma migrate dev --name init</code>?</p>
+<label><input type="radio" name="q5" value="0" data-grund="Falsch, weil die Migration echtes SQL in prisma/migrations/…_init/migration.sql enthält, keine reine JavaScript-Datei."> Eine reine JavaScript-Datei ohne SQL-Inhalt</label>
+<label><input type="radio" name="q5" value="1" data-grund="Richtig, weil migrate dev die SQL-Migration plus den Client anlegt (generate passiert dabei automatisch)."> Eine SQL-Migration und den generierten Client</label>
+<label><input type="radio" name="q5" value="2" data-grund="Falsch, weil migrate dev eine Migration erzeugt, keine Sicherungskopie der Datenbank."> Eine Sicherungskopie der bestehenden Datenbank</label>
+<label><input type="radio" name="q5" value="3" data-grund="Falsch, weil das Schema Beziehungen als Felder definiert und daraus Fremdschlüssel baut — nicht ohne Beziehung."> Eine neue Tabelle ohne jegliche Beziehung</label>
+<p class="feedback" aria-live="polite"></p>
+</div>
+
+<div class="quiz" data-loesung="2">
+<p class="frage">6. Wie bekommt der PrismaClient in Version 7 seine Verbindung?</p>
+<label><input type="radio" name="q6" value="0" data-grund="Falsch, weil Prisma 7 die Rust-Query-Engine entfernt hat; sie ist nicht mehr im Hintergrund aktiv."> Über die automatische Rust-Engine im Hintergrund</label>
+<label><input type="radio" name="q6" value="1" data-grund="Falsch, weil der Client ohne übergebenen Adapter unter Prisma 7 gar nicht startet."> Über eine globale Umgebungsvariable ohne Adapter</label>
+<label><input type="radio" name="q6" value="2" data-grund="Richtig, weil der Client mit new PrismaClient({ adapter }) einen übergebenen Driver Adapter bekommt."> Über einen übergebenen Driver Adapter im Konstruktor</label>
+<label><input type="radio" name="q6" value="3" data-grund="Falsch, weil der Client die Verbindung über den Adapter erhält, nicht direkt aus dem Datasource-Block."> Über den Datasource-Block direkt aus dem Schema</label>
+<p class="feedback" aria-live="polite"></p>
+</div>
+
+<div class="quiz" data-loesung="0">
+<p class="frage">7. Was zählt <code>prisma.kuenstler.count({ where: { labelId: { not: null } } })</code>?</p>
+<label><input type="radio" name="q7" value="0" data-grund="Richtig, weil der Filter labelId: { not: null } genau die Künstler mit gesetztem Label zählt."> Nur Künstler mit gesetztem Label</label>
+<label><input type="radio" name="q7" value="1" data-grund="Falsch, weil labelId: { not: null } Künstler ohne Label gerade ausschließt; alle zählen wäre count() ohne Filter."> Alle Künstler samt jenen ohne Label</label>
+<label><input type="radio" name="q7" value="2" data-grund="Falsch, weil der Filter nur auf NULL prüft und nichts mit doppelten Labels zu tun hat."> Nur Künstler mit doppeltem Label</label>
+<label><input type="radio" name="q7" value="3" data-grund="Falsch, weil die Abfrage auf labelId filtert, nicht auf vorhandene Songs."> Nur Künstler ohne zugehörigen Song</label>
+<p class="feedback" aria-live="polite"></p>
+</div>
+
+<div class="quiz" data-loesung="3">
+<p class="frage">8. Was gilt für den Self-JOIN unter Prisma?</p>
+<label><input type="radio" name="q8" value="0" data-grund="Falsch, weil die include-Option Beziehungen lädt, aber keinen Self-JOIN erzeugt."> Er läuft automatisch über die include-Option</label>
+<label><input type="radio" name="q8" value="1" data-grund="Falsch, weil relation-Felder Beziehungen beschreiben, Prisma daraus aber keinen Self-JOIN baut."> Er läuft automatisch über die relation-Felder</label>
+<label><input type="radio" name="q8" value="2" data-grund="Falsch, weil die Lesson keine Vorschau-Funktion nennt; der eigentliche Weg ist $queryRaw."> Er läuft nur mit aktivierter Vorschau-Funktion</label>
+<label><input type="radio" name="q8" value="3" data-grund="Richtig, weil Prisma keinen Self-JOIN direkt unterstützt und der Fluchtweg $queryRaw ist."> Er läuft nur über rohes SQL per $queryRaw</label>
+<p class="feedback" aria-live="polite"></p>
+</div>
+
+<hr>
+
+<h2>Aufgabe</h2>
+<ol>
+<li><strong>Vorhersage:</strong> Notiere <em>vor</em> dem Ausführen, welche Künstler Query 1 wohl
+zurückgibt und warum <code>COUNT(*)</code> hier 4 ergibt, <code>COUNT(labelId)</code> aber 3.</li>
+<li><strong>Setup wiederholen:</strong> Projekt aufsetzen (<code>npm i …@7</code>, <code>approve-scripts</code>,
+<code>.env</code>, <code>migrate</code>, <code>seed</code>) und <code>npm run run</code> sowie <code>npm test</code>
+grün bekommen (Screenshot der 5 Konsolen-Zeilen).</li>
+<li><strong>Erweitern:</strong> Füge ein Model <code>Playlist</code> mit N:M zu <code>Song</code> hinzu,
+migriere und schreibe <em>eine</em> Prisma-Query, die pro Playlist die Song-Anzahl liefert.</li>
+<li><strong>Reflektieren (5–6 Sätze):</strong> Wo war Prisma kürzer als SQL, wo musstest du auf
+<code>$queryRaw</code> ausweichen? Bleibst du bei Prisma?</li>
+</ol>
+<p>Abgabe: <code>.sql</code>-Datei bzw. Projekt-Commit wie im Klassen-Repo vereinbart; schriftlicher
+Teil als Markdown.</p>
+
+<footer class="lesson-foot">
+  <p>Weiter zu <a href="../KM6-01-prisma-werkzeuge/lesson.html">KM6-01 — Prisma-Werkzeuge &amp; Migrations</a>.</p>
+</footer>
+
+</main>
+</body>
+</html>
