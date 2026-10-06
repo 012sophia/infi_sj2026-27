@@ -86,8 +86,3 @@ WHERE s.dauer_sek > 200
 GROUP BY k.id, k.name
 HAVING COUNT(*) >= 2
 ORDER BY lange_songs DESC, k.name;
-
-// zu Aufgabe 6: 
-// Ich war leider am 29.9 nicht da, weil ich krank war, aber soweit ich
-//das  verstanden habe, wurde müsste man prisma mit einem Zusätzlichen
-//Adapter installieren, aber mit node und npm hat das besser funktioniert.

@@ -1,0 +1,1 @@
+Ich war leider am 29.9 nicht da, weil ich krank war, aber soweit ich das  verstanden habe, funktioniert die kKombination von deno, sqlite und prisma7 nicht, deswegen machen wir das anders mit node und wir verbinden das mit einer datenbank per url

@@ -2,6 +2,10 @@
 // Reihenfolge wegen Fremdschlüsseln: Kinder zuerst.
 import { prisma } from "./db.ts";
 
+declare const process: {
+  exit(code?: number): never;
+};
+
 async function main() {
   await prisma.song.deleteMany();
   await prisma.kuenstler.deleteMany();

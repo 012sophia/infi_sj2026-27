@@ -3,8 +3,18 @@
 //
 // Statt einer SQL-Anweisung mit GROUP BY + COUNT + LEFT JOIN reicht hier ein
 // findMany mit "select _count" — Prisma zählt die verknüpften Songs mit.
-import { pathToFileURL } from "node:url";
 import { prisma } from "./db.ts";
+import { pathToFileURL } from "node:url";
+
+function toFileUrl(filePath: string): string {
+  const normalizedPath = filePath.replace(/\\/g, "/");
+  const url = /^[A-Za-z]:\//.test(normalizedPath)
+    ? `file:///${normalizedPath}`
+    : normalizedPath.startsWith("/")
+      ? `file://${normalizedPath}`
+      : `file:///${normalizedPath}`;
+  return new URL(url).href;
+}
 
 export async function playlistSongAnzahl() {
   const rows = await prisma.playlist.findMany({

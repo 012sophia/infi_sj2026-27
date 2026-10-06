@@ -1,6 +1,24 @@
 // src/queries.ts — die 5 Diagnose-Queries aus UE 1, einmal über die Prisma-API.
 // Vergleich: dasselbe vorher in SQL (Lektion 0001), hier als ORM-Ausgabe.
-import { pathToFileURL } from "node:url";
+// Lokale Typdeklaration, damit die Datei auch ohne @types/node kompiliert.
+declare const process: {
+  argv: string[];
+  exit(code?: number): never;
+};
+
+declare class URL {
+  constructor(url: string);
+  href: string;
+}
+
+function pathToFileURL(path: string): URL {
+  const normalized = path.replace(/\\/g, "/");
+  const isWindowsAbsolute = /^[A-Za-z]:\//.test(normalized);
+  return new URL(
+    isWindowsAbsolute ? `file:///${normalized}` : `file://${normalized.startsWith("/") ? "" : "/"}${normalized}`,
+  );
+}
+
 import { prisma } from "./db.ts";
 
 // 1. Top-Künstler nach Track-Anzahl
