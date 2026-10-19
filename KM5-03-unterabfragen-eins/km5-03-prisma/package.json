@@ -1,0 +1,36 @@
+{
+  "name": "km5-03-unterabfragen-prisma",
+  "version": "1.0.0",
+  "description": "KM5-03 Unterabfragen I als Prisma-7-Lösung (Node + Prisma 7 + SQLite)",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --import tsx --test test/queries.test.ts",
+    "run": "tsx src/queries.ts",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:seed": "tsx src/seed.ts",
+    "db:status": "prisma migrate status",
+    "db:reset": "prisma migrate reset --force",
+    "postinstall": "prisma generate"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@prisma/adapter-better-sqlite3": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "dotenv": "^18.0.5",
+    "prisma": "^7.10.0"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.10.0": true,
+    "better-sqlite3@12.11.1": true,
+    "prisma@7.10.0": true,
+    "esbuild@0.28.2": true
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15"
+  }
+}
